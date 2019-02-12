@@ -1,0 +1,8 @@
+
+$USER=/home/peng/baidu/Video
+
+export PYTHONPATH=$PYTHONPATH:$USER:DeLS-3D/
+export PYTHONPATH=$PYTHONPATH:$USER:vis-utils/
+export PYTHONPATH=$PYTHONPATH:$USER:apolloscape-api/
+
+
