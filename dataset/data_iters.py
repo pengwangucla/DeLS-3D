@@ -8,19 +8,19 @@ import numpy as np
 import os
 import cv2
 
-import data.zpark as zpark
-import transform as ts
+import zpark
+import data_transform as v_dt
 from imgaug import augmenters as iaa
 from mxnet.io import DataIter, DataBatch
-from collections import OrderedDict, namedtuple Batch = namedtuple('Batch', ['data']) import Networks.net_util as nuts
-import Networks.pose_net as posenet
-import utils.utils_3d as uts_3d
-import utils.utils as uts
+from collections import OrderedDict,namedtuple
+
+Batch = namedtuple('Batch', ['data'])
+import utils_3d as uts_3d
+import vis_utils as uts
 import logging
+
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
-
-NEW_X = np.newaxis
 
 
 def get_video_sequence(image_path):
@@ -54,6 +54,7 @@ def gen_file_list(params,
 
     set_name = split + '_set'
     image_list = [line.strip() for line in open(params[set_name])]
+
     # shorten the test
     if split == 'test':
         image_list = image_list[:387]
@@ -103,7 +104,6 @@ def gen_file_list_video(params, recur_steps, save_path, split):
                 image_name = ext_i[1]
 
                 if j > 0:
-                    # flow
                     str_lb = prefix_flow + scene_name + '/' + image_name[:-4] + '.npz'
                     append = '\t' if j == recur_steps-1 else '\t'
                     save_str = ('{}' + append).format(str_lb)
@@ -338,51 +338,6 @@ def exp_to_4d(data, shape=None, interp=None):
     return data
 
 
-def image_transform(img, method='norm', center_crop=None):
-    if 'norm' == method:
-        img = np.float32(img) / 255.0
-        img -= 0.5
-
-    if center_crop:
-        height, width = img.shape[:2]
-        up = height / 2 - center_crop / 2
-        left = width / 2 - center_crop / 2
-        img = img[up:up+center_crop, left:left+center_crop]
-
-    img = np.transpose(img, [2, 0, 1])
-    img = np.expand_dims(img, axis=0)  # (1, c, h, w)
-    return img
-
-
-def score_transform(score):
-    score = np.transpose(score, [2, 0, 1])
-    score = np.expand_dims(score, axis=0)  # (1, c, h, w)
-    return score
-
-
-def mask_label(label, ignore_labels):
-    if isinstance(ignore_labels, int):
-        ignore_labels = [ignore_labels]
-    mask = label >= 0
-    for ignore_label in ignore_labels:
-        mask = np.logical_and(mask, label != ignore_label)
-    label = label * np.int32(mask)
-    return label
-
-
-def label_db_transform(label, with_channel=False,
-        ignore_labels=None):
-    #label = np.float32(label)/class_num
-    if ignore_labels is not None:
-        label=mask_label(label, ignore_labels)
-
-
-    label = label[NEW_X, NEW_X, :, :] if with_channel \
-            else label[NEW_X, :, :]
-
-    return label # (1, h, w)
-
-
 def label_transform(label,
                     ignore_labels=None,
                     gt_type=None,
@@ -434,74 +389,6 @@ def identity(data):
 def flow_reader(flow_file):
     res = np.load(flow_file)['flow']
     return res
-
-
-def angle_to_proj_mat(trans, rot, is_quater=False):
-
-    ext = np.zeros((4, 4), dtype=np.float32)
-    if not is_quater:
-        ext[:3, :3] = uts_3d.euler_angles_to_rotation_matrix(rot)
-    else:
-        ext[:3, :3] = uts_3d.quater_to_rot_mat(rot)
-
-    ext[:3, 3] = trans
-    ext[3, 3] = 1.0
-    ext = np.linalg.inv(ext)
-    ext = np.transpose(ext)
-    ext = np.float32(ext.flatten())
-
-    return ext
-
-
-def color_to_id(image, height, width,
-                color_map=None,
-                is_id=True, # means is_color
-                label_mapping=None):
-    """Convert a rendered color image to id
-    Current it is very confusion, i have two version render
-    1: render color  2: direct render label id
-    is_id: using color else use label id
-
-    Input:
-       color_map: the color map
-       is_id: whether to return semantic id map rather than color
-              map
-       label_mapping: mapping label to used label id
-    """
-
-    image = image.reshape((height, width, 4))
-    image = image[:, :, :3]
-    image = cv2.flip(image, 0)
-    label = image[:, :, ::-1]
-
-    if is_id:
-        label = uts.color2label(label, color_map)
-    else:
-        label = label[:, :, 0]
-        if label_mapping is not None:
-            label = label_mapping[label]
-
-    return label
-
-
-def get_projector(params, height, width):
-    import projector as pj
-    proj = pj.pyRenderPCD(
-            params['cloud'],
-            params['vertex'],
-            params['geometry'],
-            params['frag'],
-            height, width)
-    return proj
-
-
-def get_proj_intr(intr, height, width):
-    intrinsic = uts_3d.intrinsic_vec_to_mat(
-            intr, [height, width])
-    intr_for_render = np.transpose(intrinsic)
-    intr_for_render = intr_for_render.flatten()
-
-    return intr_for_render
 
 
 def get_intr_key(keys, filename):
@@ -559,6 +446,7 @@ def trans_reader_pre_all(trans_file, rand_num):
     label_db = cv2.imread((image_name + "_%04d.png") % rand_int,
             cv2.IMREAD_UNCHANGED)
     label_db_file = (image_name + "_%04d.png") % rand_int
+
     if not os.path.exists(label_db_file):
         raise ValueError('%s not exists' % label_db_file)
 
@@ -707,62 +595,6 @@ def get_setting():
     return data, label
 
 
-def get_pose_setting(with_points=False, K=None,
-        with_pose_in=False, pre_render=True,
-        rand_num=10):
-    data= OrderedDict([])
-    data['image'] = {'size': [512, 608],
-            'channel': 3,
-            'is_img': True,
-            'resize_method': cv2.INTER_CUBIC,
-            'transform':image_transform,
-            'transform_params':{}}
-
-    if pre_render:
-        data['label_db'] = {'size': [512, 608],
-                'reader': trans_reader_pre_all,
-                'reader_params': {'rand_num':rand_num},
-                'channel': 1,
-                'is_img': False,
-                'resize_method': cv2.INTER_NEAREST,
-                'transform':label_db_transform,
-                'transform_params':{'with_channel':True}}
-    else:
-        data['label_db'] = {'size': [512, 608],
-                'reader': trans_reader,
-                'reader_params': {'multi_return': True,
-                                  'proj_mat': True},
-                'channel': 1,
-                'is_img': False,
-                'resize_method': cv2.INTER_NEAREST,
-                'transform': label_db_transform,
-                'transform_params': {'with_channel':True}}
-
-    if with_pose_in:
-        data['pose_in'] = {'reader': trans_reader,
-                'reader_params': {'multi_return': True,
-                                  'convert_to': 'mat'},
-                'is_img': False,
-                'transform': pose_transform,
-                'transform_params':{}}
-
-    if with_points:
-        data['points'] = {'size': [512/2, 608/2],
-                'reader': depth_reader,
-                'is_img': False,
-                'reader_params': {'K': K},
-                'transform':point_transform,
-                'transform_params':{}}
-
-    label = OrderedDict([])
-    if pre_render:
-        label['pose'] = {'reader': np.loadtxt,
-                'reader_params': {},
-                'transform' : pose_transform,
-                'transform_params': {}}
-
-    return data, label
-
 
 def get_pose_rnn_setting(rnn_num,
                          with_points=False,
@@ -829,7 +661,7 @@ def get_pose_seg_setting(params=None):
             'channel': 3,
             'is_img': True,
             'resize_method': cv2.INTER_CUBIC,
-            'transform':image_transform,
+            'transform':v_dt.image_transform,
             'transform_params':{}}
 
     data['pose_in'] = {'reader': trans_reader,
@@ -1078,329 +910,7 @@ def get_rnn_pose_for_seg_setting(label_path=None,
     return data, label
 
 
-def render_from_3d(pose_in, proj, intr, color_map,
-        is_color, label_map):
-    """
-    Inputs:
-        pose_in: a input pose with [n x 6] 6 dim vector,
-            first 3 is trans and last 3 is rot
-    return:
-        a list of rendered resutls
-    """
 
-    label_proj = []
-    sz = proj.get_image_size()
-
-    for pose in pose_in:
-        ext = angle_to_proj_mat(
-                pose[:3], pose[3:], is_quater=False)
-        label_proj_c = proj.pyRenderToMat(intr, ext)
-        label_proj.append(
-                color_to_id(label_proj_c, sz[0], sz[1],
-                color_map,
-                is_id=is_color,
-                label_mapping=label_map))
-
-    return label_proj
-
-
-
-class FlowForSegDataIter(DataIter):
-    """Data Iter specified for our rnn flow
-
-    Parameters
-    ----------
-    """
-    def __init__(self,
-                 params,
-                 root_dir,
-                 split,
-                 is_augment=True,
-                 is_rnn=False,
-                 with_flow=False,
-                 proj=None,
-                 intr_for_render=None,
-                 posecnn='',
-                 posernn=None,
-                 gt_type='bkg',
-                 data_setting = None,
-                 label_setting = None):
-        """
-        Input:
-            posecnn: posecnn model for loading pre-rendered results
-        """
-
-        super(FlowForSegDataIter, self).__init__()
-        self.root_dir = root_dir
-        self.data_name = data_setting.keys()
-        self.data_setting = data_setting
-        self.data_num = len(data_setting.keys())
-        self._is_augment = is_augment
-        self.params = params
-        self.split = split
-        self.is_rnn = is_rnn
-        self._with_flow = with_flow
-        self.gt_type = gt_type
-
-        self.res_path = params['pose_rect'] + posecnn + '/'
-        if is_rnn:
-            _, self.arg_params, self.aux_params = nuts.args_from_models(
-                    posernn, False)
-
-        self.proj = proj
-        self.intr_for_render = intr_for_render
-        key = self.data_setting.keys()[0]
-        if 'size' in self.data_setting[key]:
-            self.g_shape = self.data_setting[key]['size']
-
-        self.batch_size = params['batch_size']
-        self.is_random = True
-
-        # generate sequence of images
-        image_list = [line.strip() for line in open(params[self.split + '_set'])]
-        cameras = params['cam_names'] if split == 'train' else params['cam_names'][0]
-
-        self.image_seq = image_set_2_seqs(image_list, params['cam_names'])
-        if self.split == 'test':
-            self.image_seq = self.image_seq[:-1]
-
-        logging.info("generated seq %d \n" % (len(self.image_seq)))
-        # self.image_seq = [self.image_seq[i] for i in [0, 1]]
-
-        self.image_list_all = [image_name \
-                for image_list in self.image_seq \
-                for image_name in image_list]
-
-        if is_augment:
-            sometimes = lambda aug: iaa.Sometimes(0.5, aug)
-            self.seq_img = iaa.Sequential([
-                sometimes(iaa.Multiply((0.7, 1.2), per_channel=True)),
-                # sometimes(iaa.OneOf([
-                #     iaa.GaussianBlur((0, 3.0)),
-                #     iaa.AverageBlur(k=(2, 7)),
-                #     iaa.MedianBlur(k=(3, 11)),
-                # ])),
-                sometimes(iaa.Grayscale(alpha=(0.0, 1.0)))
-                ])
-
-        self.label_name = label_setting.keys()
-        self.label_setting = label_setting
-        self.label_num = len(self.label_name)
-        self.num_data = len(self.image_list_all)
-        self.reset()
-        self.data, self.label = self._read(0)
-
-
-    def _read(self, curpose):
-        """get two list, each list contains two elements: name and nd.array value"""
-        image_file = self.image_list_all[curpose]
-        pose = self.pose_seq[curpose]
-        data, label= self._read_img(image_file, pose, curpose)
-        return list(data.items()), list(label.items())
-
-
-    def _pose_to_flow(self, image_file, pose, pose_gt, sz, label_db):
-        depth_file = self.params['depth_path'] + image_file + '.png'
-        depth = self.params['read_depth'](depth_file)
-        depth = cv2.resize(depth, (sz[1], sz[0]),
-                           interpolation=cv2.INTER_NEAREST)
-        order = [3,4,5,0,1,2]
-        flow, _, mask = uts_3d.depth2flow(depth, pose_gt[order],
-                pose[order], self.params['intrinsic'], is_norm=True)
-
-        return flow, mask
-
-
-    def _read_img(self, image_file, pose, curpose):
-        data_dict = OrderedDict({})
-        if self._is_augment:
-            seq_img = self.seq_img.to_deterministic()
-
-        intr_key = get_intr_key(self.params['intrinsic'].keys(),
-                image_file)
-
-        for data_name in ['image', 'label_db']:
-            height, width = self.data_setting[data_name]['size']
-            if data_name == 'image':
-                image_path = os.path.join(self.params['image_path'],
-                        image_file + '.jpg')
-                data = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)
-            else:
-                if self.is_rnn:
-                    ext = angle_to_proj_mat(pose[:3], pose[3:])
-                    height, width = self.proj.get_image_size()
-                    intr_for_render = get_proj_intr(
-                            self.params['intrinsic'][intr_key],
-                            height, width)
-                    label_db = self.proj.pyRenderToMat(
-                            intr_for_render, ext)
-                    data = color_to_id(label_db, height, width,
-                            self.params['color_map'],
-                            is_id=self.params['is_color_render'],
-                            label_mapping=self.params['id_2_trainid'])
-                else:
-                    trans_file = self.res_path + image_file \
-                            + '_%04d'%self.rand_id[curpose] + '.png'
-                    data = cv2.imread(trans_file, cv2.IMREAD_UNCHANGED)
-                    data[data == 0] = 1 # set 0 as sky
-
-            if data is None:
-                raise ValueError('can not read data %s' % data_name)
-
-            interpolation = self.data_setting[data_name]['resize_method']
-            height, width = self.data_setting[data_name]['size']
-            is_img = self.data_setting[data_name]['is_img']
-
-            if self._is_augment and is_img:
-                data = exp_to_4d(data, self.g_shape, interpolation)
-                data = seq_img.augment_images(data)
-                data = np.squeeze(data[0])
-
-            data = np.array(data, dtype=np.float32)
-            data = cv2.resize(data, (width, height),
-                       interpolation=interpolation)
-
-            transform = self.data_setting[data_name]['transform']
-            transform_params = self.data_setting[data_name]['transform_params']
-            data_dict[data_name] = transform(data, **transform_params)
-
-        # set up label
-        label_dict = OrderedDict({})
-        if self._with_flow:
-            pose_file = self.params['pose_path'] + image_file + '.txt'
-            pose_gt = np.loadtxt(pose_file)
-
-            sz = self.label_setting['flow']['size']
-            label_id = np.squeeze(data_dict['label_db'])
-            flow, mask = self._pose_to_flow(image_file, pose,
-                    pose_gt, sz,
-                    label_id)
-            label_dict['flow'] = flow_transform(flow)
-            label_dict['mask'] = label_db_transform(mask)
-
-        for label_name in self.label_setting.keys():
-            sz = self.label_setting[label_name]['size']
-
-            label_path = self.label_setting[label_name]['label_path'] + \
-                        image_file + '.png'
-            label_gt = cv2.imread(label_path, cv2.IMREAD_UNCHANGED)
-            label_gt = cv2.resize(label_gt, (sz[1], sz[0]),
-                    interpolation=cv2.INTER_NEAREST)
-            transform = self.label_setting[label_name]['transform']
-            transform_params = self.label_setting[label_name]['transform_params']
-            label_dict['segment'] = transform(label_gt, **transform_params)
-
-        return data_dict, label_dict
-
-    @property
-    def provide_data(self):
-        """The name and shape of data provided by this iterator"""
-        return [(key, tuple([self.batch_size] + list(value.shape[1:])))
-                for key, value in self.data]
-
-    @property
-    def provide_label(self):
-        """The name and shape of label provided by this iterator"""
-        return [(key, tuple([self.batch_size] + list(value.shape[1:])))
-                for key, value in self.label]
-
-    def get_batch_size(self):
-        return self.batch_size
-
-
-    def reset_rnn(self):
-        # sample pose into a sequence
-        self.pose_seq = []
-
-        for count, image_list in enumerate(self.image_seq):
-            logging.info('predict sequence %d len: %d' % (
-                count, len(image_list)))
-            image_num = len(image_list)
-            data_names = ['pose_in_%03d'%i for i in range(image_num)]
-            data_shapes = [tuple([1, 6]) for i in range(image_num)]
-            data_shapes = [(name, shape) for name, shape \
-                    in zip(data_names, data_shapes)]
-
-            inputs = nuts.get_mx_var_by_name(data_names)
-            # only accept hier rnn & layer number = 2
-            net = posenet.recurrent_pose(inputs, name='pose',
-                    is_train=False, is_highorder=True, layer_num=2)
-            net = mx.sym.Group(net.values())
-            mod = mx.mod.Module(net,
-                                data_names=data_names,
-                                label_names=None,
-                                context=mx.gpu(1))
-            mod.bind(for_training=False, data_shapes=data_shapes)
-            mod.set_params(self.arg_params,
-                           self.aux_params,
-                           allow_missing=False)
-
-            pose_in = []
-            for count, image_name in enumerate(image_list):
-                trans_file = self.res_path + image_name + '.txt'
-                cur_pose = trans_reader_pre(trans_file, ext='txt',
-                        max_pre_render_num=self.params['pose_permute_num'])
-                cur_pose = pose_transform(cur_pose)
-                pose_in.append(mx.nd.array(cur_pose))
-
-            mod.forward(Batch(pose_in))
-            output_nd = mod.get_outputs()
-            for res in output_nd:
-                self.pose_seq.append(res.asnumpy()[0])
-
-
-    def reset_posenet(self):
-        self.pose_seq = []
-        self.rand_id = []
-        for image_list in self.image_seq:
-            for count, image_name in enumerate(image_list):
-                trans_file = self.res_path + image_name + '.txt'
-                cur_pose, idx = trans_reader_pre(trans_file, ext='txt',
-                        get_rand_id=True,
-                        max_pre_render_num=self.params['pose_permute_num'])
-
-                self.pose_seq.append(cur_pose)
-                self.rand_id.append(idx)
-
-
-    def reset(self):
-        if self.is_rnn:
-            self.reset_rnn()
-        else:
-            self.reset_posenet()
-
-        logging.info("generate new image seq")
-        self.cursor = -1 * self.batch_size
-        self.order = np.random.permutation(self.num_data)
-
-    def iter_next(self):
-        if(self.cursor < self.num_data-1):
-            self.cursor += self.batch_size
-            self.cursor = min(self.cursor, self.num_data-1)
-            return True
-        else:
-            return False
-
-    def next(self):
-        """return one dict which contains "data" and "label" """
-        if self.iter_next():
-            batch_data = [mx.nd.empty(info[1]) for info in self.provide_data]
-            batch_label = [mx.nd.empty(info[1]) for info in self.provide_label]
-            end_curpose = min(self.cursor + self.batch_size, self.num_data)
-            pose = 0
-            for i in xrange(self.cursor, end_curpose):
-                self.data, self.label = self._read(self.order[i])
-                for info_idx, (key, value) in enumerate(self.data):
-                    batch_data[info_idx][pose] = value[0]
-                for info_idx, (key, value) in enumerate(self.label):
-                    batch_label[info_idx][pose] = value[0]
-                pose += 1
-
-            return DataBatch(data=batch_data, label=batch_label,
-                    pad=self.batch_size-pose)
-
-        else:
-            raise StopIteration
 
 
 
@@ -1472,6 +982,7 @@ class SegDataIter(DataIter):
         self.data, self.label = self._read(0)
 
         self.reset()
+
 
     def _read(self, curpose):
         """get two list, each list contains two elements: name and nd.array value"""
@@ -1677,7 +1188,8 @@ class PoseDataIter(DataIter):
         if self._is_augment:
             seq_img = self.seq_img.to_deterministic()
 
-        intr_key = get_intr_key(self.params['intrinsic'].keys(), data_files[0])
+        intr_key = get_intr_key(
+                self.params['intrinsic'].keys(), data_files[0])
         for i, (data_name, filename) in enumerate(zip(self.data_name, data_files)):
             if not ('reader' in self.data_setting[data_name].keys()):
                 data = cv2.imread(os.path.join(self.root_dir, filename),
@@ -1907,7 +1419,7 @@ class VideoSegDataIter(SegDataIter):
                  loss_suffix=[''],
                  data_setting=None,
                  label_setting=None):
-        # pdb.set_trace()
+
         super(VideoSegDataIter, self).__init__(params,
                      root_dir,
                      flist_name,

@@ -1,8 +1,7 @@
+ROOT=/home/peng/
 
-$USER=/home/peng/baidu/Video
-
-export PYTHONPATH=$PYTHONPATH:$USER:DeLS-3D/
-export PYTHONPATH=$PYTHONPATH:$USER:vis-utils/
-export PYTHONPATH=$PYTHONPATH:$USER:apolloscape-api/
-
+unset PYTHONPATH
+export PYTHONPATH=$PYTHONPATH:$ROOT/vis_utils/
+export PYTHONPATH=$PYTHONPATH:$ROOT/dataset-api/self_localization/
+export PYTHONPATH=$PYTHONPATH:$ROOT/DeLS-3D/
 

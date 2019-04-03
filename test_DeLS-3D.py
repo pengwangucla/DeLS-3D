@@ -1,22 +1,28 @@
-"""Test demo for trained model
 """
+Test demo for pretrained models.
+Author: 'peng wang'
+
+"""
+
 import argparse
 import cv2
 import logging
 import mxnet as mx
 import numpy as np
-import metric
+import vis_metrics as metric
 import time
 import vis_utils as uts
+import data_transform as ts
 import utils_3d as uts_3d
+import utils.dels_utils as de_uts
 
 import dataset.data_iters as data_iter
 import networks.pose_nn as pose_nn
 import networks.net_util as nuts
 from config import config
 from collections import namedtuple, OrderedDict
-
 import pdb
+debug = 1
 
 np.set_printoptions(precision=4, suppress=True)
 logger = logging.getLogger()
@@ -24,40 +30,43 @@ logger.setLevel(logging.INFO)
 Batch = namedtuple('Batch', ['data'])
 
 
-def iter_infer(mod, data_batch, out_names):
+def infer(mod,
+          inputs,
+          data_setting,
+          out_names):
+
+    assert isinstance(inputs, OrderedDict)
+    data_list = []
     s = time.time()
-    mod.forward(data_batch)
+    for in_name in inputs:
+        data = np.array(inputs[in_name], dtype=np.float32)  # (h, w, c)
+        if 'size' in data_setting[in_name]:
+            height, width = data_setting[in_name]['size']
+            interpolation = data_setting[in_name]['resize_method']
+            data = cv2.resize(data, (width, height),
+                              interpolation=interpolation)
+        transform = data_setting[in_name]['transform']
+        args = data_setting[in_name]['transform_params']
+        data = transform(data, **args)
+        data_list.append(mx.nd.array(data))
+
+    prep_time = time.time() - s
+    mod.forward(Batch(data_list))
     output_nd = mod.get_outputs()
 
-    res = OrderedDict({})
+    res = {}
     for i, name in enumerate(out_names):
         output_nd[i].wait_to_read()
+        asnp_time = time.time() - prep_time - s
         res[name] = output_nd[i].asnumpy()
-    asnp_time = time.time() - s
-    logging.info('forward time {}'.format(asnp_time))
+
+    post_time = time.time() - prep_time - s- asnp_time
+    logging.info('forward time pre {}, asnp {}, post {}'.format(
+        prep_time, asnp_time, post_time))
+
     return res
 
 
-def def_model(in_names, params=None, version='cnn', args=None):
-    """ set up the symbolic for data
-    """
-
-    inputs = nuts.get_mx_var_by_name(in_names)
-    if version == 'cnn':
-        net = pose_nn.pose_block(inputs,
-                    params,
-                    in_names=in_names,
-                    name='pose',
-                    is_train=False)
-
-    elif version == 'rnn':
-        net = pose_nn.recurrent_pose(inputs, name='pose',
-                is_train=False, **args)
-
-    else:
-        raise ValueError('no such network')
-
-    return mx.symbol.Group(net.values()), net.keys()
 
 
 def posenet_res2label(pose_output, proj, intrinsic, sz, color_map):
@@ -76,100 +85,13 @@ def get_input_shape(data_config, name):
     return data_config[name]['size']
 
 
-def test_posenet_v1(method, dataname, is_eval=True):
-    ctx = mx.gpu(int(args.gpu_ids))
-    params = data_libs[dataname] '.set_params()')
-
-    data_setting, label_setting = data_iter.get_pose_setting(
-            pre_render=False)
-    height, width = data_setting['image']['size']
-    proj = data_iter.get_projector(params, height, width)
-    val_iter = data_iter.PoseDataIter(params=params,
-            root_dir=params['data_path'],
-            flist_name='train_file/test_pose.ls',
-            is_augment=False,
-            proj=proj,
-            data_setting=data_setting,
-            label_setting=label_setting)
-
-    # define networks
-    height, width = data_setting['image']['size']
-    data_names = ['image', 'label_db', 'pose_in']
-    data_shapes = OrderedDict(val_iter.provide_data)
-    data_shapes = [data_shapes[name] for name in data_names]
-
-    net, out_names = def_model(data_names, params, version='cnn')
-    in_model = {'model':args.model_path + method}
-    model = nuts.load_model(in_model,
-                data_names=data_names,
-                data_shapes=data_shapes,
-                net=net, ctx=ctx)
-
-    # start eval
-    pose_eval_metric = metric.PoseMetric(is_euler=True)
-    seg_eval_metric = metric.SegMetric(ignore_label=255)
-
-    while val_iter.iter_next():
-        # obtain an instance of output
-        path = val_iter.input_names[0].split('/')
-        image_name = path[-1][:-4]
-        test_scene = '/'.join(path[1:-1])
-
-        logging.info('results for {}, {}'.format(test_scene, image_name))
-        save_path = params['output_path'] + method + '/' + test_scene + '/'
-        uts.mkdir_if_need(save_path)
-
-        data = [mx.nd.array(data[1]) for data in val_iter.data]
-        pose = [mx.nd.array(label[1]) for label in val_iter.label]
-
-        # get pose and corresponding projected map
-        res = iter_infer(model, Batch(data), out_names)
-        pose_output = res[out_names[0]]
-
-        intr_key = data_iter.get_intr_key(params['intrinsic'].keys(), path)
-        intr = data_iter.get_proj_intr(params['intrinsic'][intr_key],
-                height, width)
-        label_proj = data_iter.render_from_3d(pose_output,
-                             proj, intr, params['color_map'],
-                             is_color=params['is_color_render'],
-                             label_map=params['id_2_trainid'])[0]
-
-        if is_eval:
-            motion_gt = pose[0].asnumpy()[0]
-            motion_noisy = data[2].asnumpy()[0]
-            label_in = data[1].asnumpy()[0, 0]
-            label_gt = cv2.imread(params['label_bkg_path'] + test_scene + '/' + image_name + '.png', cv2.IMREAD_UNCHANGED)
-            label_seg = mx.nd.array(data_iter.label_transform(label_gt))
-
-            # pose metric & segment metric
-            seg_output = mx.nd.array(label_proj[None, :, :])
-            seg_output = mx.ndarray.one_hot(seg_output, params['class_num'])
-            seg_output = mx.ndarray.transpose(seg_output, axes=(0, 3, 1, 2))
-
-            pose_eval_metric.update([mx.nd.array(motion_gt)],
-                    [mx.nd.array(pose_output)])
-            seg_eval_metric.update(label_seg, [seg_output])
-            logging.info('Eval seg {}'.format(seg_eval_metric.get()))
-            logging.info('Eval pose {}'.format(pose_eval_metric.get()))
-
-        if args.is_save:
-            logging.info('Saved')
-            cv2.imwrite(save_path + image_name + '_label_perturb.png', label_in)
-            np.savetxt(save_path + image_name + '_perturb.txt', motion_noisy)
-            cv2.imwrite(save_path + image_name + '_label_rect.png', label_proj)
-            np.savetxt(save_path + image_name + '_rect.txt', pose_output[0, :])
-        val_iter.data, val_iter.label = val_iter._read()
-
-    logging.info('Final seg eval {} pose eval {}'.format(str(seg_eval_metric.get()), str(pose_eval_metric.get())))
-
-
 def test_pose_cnn_demo(method, dataname):
     logging.info(method)
 
     ctx = mx.gpu(int(args.gpu_ids))
     params = config.dataset[dataname].set_params(
-                    config.path.data_root,
-                    config.path.model_root)
+                        config.path.data_root,
+                        config.path.model_root)
 
     # define saving place
     data_setting, label_setting = config.pose_nn_setting(
@@ -252,8 +174,6 @@ def test_pose_cnn_demo(method, dataname):
                     image_name + '.txt', pose_out)
 
     logging.info('Final seg eval {} pose eval {}'.format(str(seg_eval_metric.get()), str(pose_eval_metric.get())))
-
-
 
 
 def rect_pre_render_res(method, dataname='dlake'):
@@ -438,7 +358,6 @@ def test_rnn():
     logging.info('Final pose eval {}'.format(str(pose_eval_metric.get())))
     if is_render:
         logging.info('Final seg eval {}'.format(str(seg_eval_metric.get())))
-
 
 
 def eval_pose_results(dataset, res_source=None, save_file=None, ):
@@ -677,17 +596,335 @@ def eval_pose_rnn_results(method=None,
     np.savetxt(save_file + 'sim_test_seg.txt', res_seg)
 
 
+class DeLS3D(object):
+    def __init__(self, dataname,
+                 pose_cnn,
+                 pose_rnn,
+                 seg_cnn,
+                 is_save_inter=False):
+        """
+        Performing deep localization and segmentation on validation set
+        of corresponding data
+        """
+        # targeting at specific scenes with 3D point cloud
+        assert dataname in ['zpark', 'dlake']
+        from dataset import data_lib
+        self.params = data_lib[dataname].set_params()
+        print(self.params['size'])
+        self.renderer = de_uts.Renderer(self.params,
+                                        self.params['cloud'],
+                                        self.params['size'])
+        self.models = {'pose_cnn': pose_cnn,
+                       'pose_rnn': pose_rnn,
+                       'seg_cnn': seg_cnn}
+
+        self.noisy_path = None
+        self.sim_noisy_params = {}
+        self.ctx = mx.gpu(int(args.gpu_ids))
+        self.test_image_list = [line.strip() for line in \
+                open(self.params['test_set'])]
+
+
+    def def_model(self, in_names, version='cnn', args=None):
+        """ set up the symbolic for data
+        """
+
+        inputs = nuts.get_mx_var_by_name(in_names)
+        if version == 'cnn':
+            net = pose_nn.pose_block(inputs,
+                        self.params,
+                        in_names=in_names,
+                        name='pose',
+                        is_train=False)
+
+        elif version == 'rnn':
+            net = pose_nn.recurrent_pose(inputs, name='pose',
+                    is_train=False, **args)
+
+        else:
+            raise ValueError('no such network')
+
+        return mx.symbol.Group(net.values()), net.keys()
+
+    def get_sim_seq(self, re_generate=True):
+        """ Use a sample sequence pregenerated
+        """
+        self.noisy_pose_path = self.params['noisy_pose_path']
+        if re_generate:
+            for image_name in self.test_image_list:
+                pose_gt_file = '%s/%s.txt' % (self.params['pose_path'],
+                        image_name)
+                pose_gt = de_uts.loadtxt(pose_gt_file)
+                trans_i, rot_i = uts_3d.random_perturb(pose_gt[:3],
+                        pose_gt[3:], 5.0)
+                noisy_pose = np.concatenate([trans_i, rot_i])
+                noisy_pose_file = '%s/%s.txt' % (self.noisy_pose_path,
+                        image_name)
+                np.savetxt(noisy_pose_file, noisy_pose)
+        self.render_segments(self.noisy_pose_path)
+
+        return self.params['noisy_pose_path']
+
+
+    def localize_and_segment(self):
+        """
+           self.pose_seq: sequence of noisy GPS/IMU
+           one may also adjust the
+        """
+        self.pose = self.refine_with_pose_cnn()
+        self.pose = self.refine_with_pose_rnn()
+        self.get_segment(self.pose_rnn_output_path)
+
+
+    def refine_with_pose_cnn(self, render_segment=False):
+        # first stage do perimage refining
+        self.pose_cnn_output_path = '%s/pose_cnn/' % self.params['output_path']
+
+        # define saving place
+        data_setting, label_setting = config.network.pose_cnn_setting(
+                                        with_pose_in=True)
+        height, width = data_setting['image']['size']
+
+        # init model
+        data_names = ['image', 'label_db', 'pose_in']
+        data_shapes = [tuple([1, 3] + data_setting['image']['size']),
+                       tuple([2, 1] + data_setting['label_db']['size']),
+                       tuple([1, 6])]
+
+        net, out_names = self.def_model(data_names, version='cnn')
+        model = nuts.load_model(self.models['pose_cnn'], data_names=data_names,
+                                data_shapes=data_shapes, net=net, ctx=self.ctx)
+
+        for i, image_name in enumerate(self.test_image_list):
+            logging.info('%d/%d, %s'%(i, len(self.test_image_list), image_name))
+
+            # get input
+            image_file = '%s/%s.jpg' % (self.params['image_path'], image_name)
+            image = de_uts.imread(image_file)
+            pose_file = '%s/%s.txt' % (self.noisy_pose_path, image_name)
+            pose_in = de_uts.loadtxt(pose_file)
+            proj_label_file = '%s/%s.png' % (self.noisy_pose_path, image_name)
+            label_db = de_uts.imread(proj_label_file)
+
+            inputs = OrderedDict([('image', image),
+                                  ('label_db', label_db),
+                                  ('pose_in', pose_in)])
+            # get pose and corresponding projected map
+            res = infer(model, inputs, data_setting, out_names)
+            pose_out = res[out_names[0]]
+
+            self._get_save_path(self.pose_cnn_output_path, image_name)
+            np.savetxt('%s/%s.txt' % (self.pose_cnn_output_path, image_name),
+                       pose_out)
+
+        if render_segment:
+            self.render_segments(self.pose_cnn_output_path)
+
+
+    def refine_with_pose_rnn(self, render_segment=False):
+        """refine the output from pose_cnn using pose_rnn
+        """
+        pass
+        # self.pose_cnn_output_path = '%s/pose_rnn/' % params['output_path']
+        # res_path = params['sim_path'] + '%02d/' % i
+        # save_file = save_file_root + '%02d/' % i
+        # rand_id = np.loadtxt(res_path + 'rand_id.txt')
+
+        # assert len(rand_id) == len(image_list_all)
+        # image_seq = data_iter.image_set_2_seqs(image_list_all, params['cam_names'],
+        #                                        rand_idx=rand_id)
+        # logging.info('test seqs len %d' % len(image_seq))
+
+        # _, arg_params, aux_params = nuts.args_from_models(pose_model, False)
+        # for count, image_list in enumerate(image_seq):
+        #     logging.info('predict sequence %d/%d, len %d' % (
+        #         count, len(image_seq), len(image_list)))
+
+        #     pose_in = []
+        #     for image_name, idx in image_list:
+        #         trans_file = '%s/%s_%04d.txt' % (ext_path, image_name, idx)
+        #         cur_pose = np.loadtxt(trans_file)
+
+        #         if is_quater:
+        #             cur_pose = np.concatenate([cur_pose[:3],
+        #                     uts_3d.euler_angles_to_quaternions(
+        #                     cur_pose[3:6])])
+        #         cur_pose = data_iter.pose_transform(cur_pose)
+        #         pose_in.append(mx.nd.array(cur_pose))
+
+        #     # predict
+        #     image_num = len(image_list)
+        #     data_names = ['pose_in_%03d' % i for i in range(image_num)]
+        #     data_shapes = [tuple([1, out_num]) for i in range(image_num)]
+        #     data_shapes = [(name, shape) for name, shape \
+        #             in zip(data_names, data_shapes)]
+
+        #     inputs = nuts.get_mx_var_by_name(data_names)
+        #     net = pose_nn.recurrent_pose(inputs, name='pose',
+        #             out_num=out_num, is_train=False,
+        #             is_highorder=True, layer_num=2)
+
+        #     net = mx.sym.Group(net.values())
+        #     mod = mx.mod.Module(net,
+        #                         data_names=data_names,
+        #                         label_names=None,
+        #                         context=mx.gpu(int(args.gpu_ids)))
+
+        #     mod.bind(for_training=False, data_shapes=data_shapes)
+        #     mod.set_params(arg_params,
+        #                    aux_params,
+        #                    allow_missing=False)
+        #     # read
+
+        #     mod.forward(Batch(pose_in))
+        #     output_nd = mod.get_outputs()
+        #     for res, (image_name, idx) in zip(output_nd, image_list):
+        #         test_scene = '/'.join(image_name.split('/')[:-1])
+        #         save_path = save_file + test_scene
+        #         uts.mkdir_if_need(save_path)
+        #         pose_out = res.asnumpy()[0]
+
+        #         if is_quater:
+        #             pose_out[3:] = pose_out[3:]/np.linalg.norm(
+        #                     pose_out[3:])
+
+        #         # save results
+        #         np.savetxt(save_file + image_name + '.txt', pose_out)
+        #         ext = data_iter.angle_to_proj_mat(
+        #                 pose_out[:3], pose_out[3:], is_quater=is_quater)
+        #         intr_key = data_iter.get_intr_key(params['cam_names'], image_name)
+        #         intr = data_iter.get_proj_intr(params['intrinsic'][intr_key],
+        #                 height, width)
+        #         label_db = data_iter.render_from_3d(pose_out[None, :], proj,
+        #                 intr, params['color_map'],
+        #                 is_color=params['is_color_render'],
+        #                 label_map=params['id_2_trainid'])[0]
+
+        #         cv2.imwrite(save_file + image_name + '.png', label_db)
+        #         pose_gt = np.loadtxt(params['pose_path'] + image_name + '.txt')
+        #         if is_quater:
+        #             pose_gt = np.concatenate([pose_gt[:3],
+        #                     uts_3d.euler_angles_to_quaternions(
+        #                     pose_gt[3:6])])
+        #         label_gt = cv2.imread(params['label_bkgfull_path'] + \
+        #                        image_name + '.png', cv2.IMREAD_UNCHANGED)
+        #         label_gt = cv2.resize(label_gt, (width, height),
+        #                        interpolation=cv2.INTER_NEAREST)
+        #         label_gt = mx.nd.array(data_iter.label_transform(label_gt))
+
+        #         # pose metric & segment metric
+        #         seg_output = mx.nd.array(label_db[None, :, :])
+        #         seg_output = mx.ndarray.one_hot(
+        #                 seg_output, params['class_num'])
+        #         seg_output = mx.ndarray.transpose(
+        #                 seg_output, axes=(0, 3, 1, 2))
+        #         pose_eval_metric.update([mx.nd.array(pose_gt[None, :])],
+        #                 [mx.nd.array(pose_out[None, :])])
+        #         seg_eval_metric.update(label_gt, [seg_output])
+
+        #         logging.info('Eval seg {}'.format(seg_eval_metric.get()))
+        #         logging.info('Eval pose {}'.format(pose_eval_metric.get()))
+
+    def get_segment(self, pose_path):
+        pass
+
+
+
+    def _get_save_path(self, output_path, image_name):
+        """ get the corresponding saving path from image name in apolloscape
+            dataset
+        """
+
+        test_scene = '/'.join(image_name.split('/')[:-1])
+        save_path = '%s/%s/' % (output_path, test_scene)
+        uts.mkdir_if_need(save_path)
+
+        return save_path
+
+
+    def render_segments(self, pose_path):
+        """Render labelled image out from generated poses
+        """
+        for i, image_name in enumerate(self.test_image_list):
+            pose_file = '%s/%s.txt' % (self.noisy_pose_path, image_name)
+            pose_in = de_uts.loadtxt(pose_file)
+            intr_key = data_iter.get_intr_key(self.params['intrinsic'].keys(),
+                                              image_name)
+            label_db = self.renderer.render_from_3d(pose_in[None, :],
+                                         self.params['intrinsic'][intr_key],
+                                         self.params['color_map'],
+                                         is_color=self.params['is_color_render'],
+                                         label_map=self.params['id_2_trainid'])
+
+            save_path = self._get_save_path(pose_path, image_name)
+            cv2.imwrite('%s/%s.png' % (save_path, image_name), label_db)
+            if debug:
+                uts.plot_images({'label_db': label_db})
+
+
+    def get_refined_pose_path(self):
+        return self.pose_cnn_output_path
+
+    def get_refined_segment_path(self):
+        return self.seg_cnn_output_path
+
+
+    def eval_pose(self, pose_res_path, eval_render_segment=False):
+        """
+        with_segment: if also evaluate projected segments
+        """
+        # start eval
+        pose_eval_metric = metric.PoseMetric(is_euler=True)
+
+        for image_name in self.test_image_list:
+            gt_file = self.params['pose_path'] + image_name + '.txt'
+            pose_gt = de_uts.loadtxt(gt_file)
+            res_file = '%s/%s.txt' % (pose_res_path + image_name)
+            pose_out = de_uts.loadtxt(res_file)
+            pose_eval_metric.update([mx.nd.array(pose_gt[None, :])],
+                                    [mx.nd.array(pose_out)])
+
+            logging.info('Eval pose {}'.format(pose_eval_metric.get()))
+
+        logging.info('Final pose eval {}'.format(str(pose_eval_metric.get())))
+
+        if eval_render_segment:
+            self.eval_segments(seg_res_path)
+
+
+    def eval_segments(self, seg_res_path):
+        seg_eval_metric = metric.SegMetric(ignore_label=255)
+        for image_name in self.test_image_list:
+            # evaluation pose metric & segment metric
+            gt_file = '%s/%s.png' % (self.params['label_path'], image_name)
+            label_gt = de_uts.imread(gt_file)
+            res_file = '%s/%s.png' % (seg_res_path, image_name)
+            label_res = de_uts.imread(res_file)
+            label_seg = mx.nd.array(ts.label_transform(label_gt))
+            seg_output = mx.nd.array(label_res[None, :, :])
+            seg_output = mx.ndarray.one_hot(seg_output, params['class_num'])
+            seg_output = mx.ndarray.transpose(seg_output, axes=(0, 3, 1, 2))
+            seg_eval_metric.update(label_seg, [seg_output])
+
+
+    def save_frame_to_video(self, seg_res_path):
+        pass
+
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description='Test the trained model for acc.')
-    parser.add_argument('--network', default='',
-            help='The model name with mxnet format.')
-    parser.add_argument('--dataset', default='dlake',
+    parser.add_argument('--data', default='dlake',
             help='The dataset name with mxnet.')
-    parser.add_argument('--gpu_ids', default="1",
+    parser.add_argument('--gpu_ids', default="0",
             help='the gpu ids use for training')
-    parser.add_argument('--is_save', default="1",
-            help='whether to save the rendered results')
+    parser.add_argument('--pose_cnn', default='',
+            help='The model name with mxnet format.')
+    parser.add_argument('--pose_rnn', default='',
+            help='The model name with mxnet format.')
+    parser.add_argument('--seg_cnn', default='',
+            help='The model name with mxnet format.')
 
     args = parser.parse_args()
     logging.info(args)
@@ -695,10 +932,27 @@ if __name__ == "__main__":
     # test_pose_cnn_demo('posecnn-test-0030', 'dlake')
     # test_posenet_v1('posecnn-proj-0094', 'dlake')
 
-    test_pose_cnn_demo('posenet-sem-wei-proj-0010', dataname='zpark')
-    eval_pose_results('posenet-sem-wei-proj-0010', dataname='zpark')
-    eval_pose_rnn_results('posenet_rnn_hier_euler-0061', data_name)
+    # then load the trained networks cnn rnn seg_cnn,
+    DeLS = DeLS3D(args.data,
+                  args.pose_cnn,
+                  args.pose_rnn,
+                  args.seg_cnn)
 
+    # first simulate a perturbation sequence using args.dataset
+    # pose_seq = uts.simulate_permuted_sequence(
+    #                              args.dataset, split='val')
+
+    # get the sequence pre-simulated
+    save_path = DeLS.get_sim_seq()
+    DeLS.localize_and_segment(sim_pose_path=save_path)
+
+    # if we have ground truth for evaluation.
+    DeLS.eval_pose(DeLS.get_refined_pose_path(),
+              DeLS.get_gt_pose_path())
+    DeLS.eval_segments(DeLS.get_segment_path(),
+              DeLS.get_gt_segment_path())
+
+    # save the images to video for visualization
 
 
 

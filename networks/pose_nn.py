@@ -5,7 +5,6 @@ import mxnet as mx
 from collections import OrderedDict
 import util_layers as utl
 import net_util as net_util
-from base_models import googlenet
 
 
 def pose_net_loss(rot, trans, label, balance=(1.0, 1.0)):
@@ -89,6 +88,7 @@ def gen_pose_loss(pose, label,
             cur_loss = projective_loss(pose, label, point_3d, weight)
             cur_loss = mx.symbol.MakeLoss(data=cur_loss, grad_scale=1.0)
             loss_all.append(cur_loss)
+
         else:
             raise ValueError('No such loss type %s' % loss)
 
@@ -118,7 +118,8 @@ def pose_block(inputs,
     in_source = mx.symbol.concat(image, label_map, dim=1)
 
     conv_feat = utl.conv_block(in_source,
-            arg_params=arg_params, name=name, ext=iter_name)
+                               arg_params=arg_params,
+                               name=name, ext=iter_name)
     conv_feat = conv_feat['block5_1']
 
     motion_feat = conv_bn_layer(conv_feat, 128, 3, 1, name=name + '_motion')
@@ -179,51 +180,6 @@ def pose_subnet(feat, pool_size=5, stride=3, filter_size=1024,
     rot = fc_bn_layer(fc1, 4, act='RELU', name=name+'_fc_pose_wpqr'+ext)
 
     return (trans, rot)
-
-
-def pose_net(image,
-            name='pose',
-            ext='',
-            pose_in=None,
-            arg_params=None,
-            is_train=True,
-            label=None):
-    if pose_in:
-        trans_in = mx.sym.slice_axis(pose_in, axis=1, begin=0, end=3)
-        rot_in = mx.sym.slice_axis(pose_in, axis=1, begin=3, end=7)
-    else:
-        trans_in = 0
-        rot_in = 0
-
-    feature = googlenet(image)
-    feat_names = ['icp3_out', 'icp6_out', 'icp9_out']
-    motion_pred = OrderedDict({})
-    motion_pred[feat_names[0]] = pose_subnet(feature[feat_names[0]], pose_in=pose_in,
-            name='cls1')
-    motion_pred[feat_names[1]] = pose_subnet(feature[feat_names[1]], pose_in=pose_in,name='cls2')
-    motion_pred[feat_names[2]] = pose_subnet(feature[feat_names[2]], pool_size=7,
-            stride=1, filter_size=2048, drop_rate=0.5, pose_in=pose_in, name='cls3', is_last=True)
-    xyz = motion_pred[feat_names[2]][0] + trans_in
-    wpqr = motion_pred[feat_names[2]][1] + rot_in
-    wpqr = mx.symbol.L2Normalization(wpqr, mode='instance')
-    Outputs = OrderedDict({'xyz': xyz, 'wpqr': wpqr})
-
-    if is_train:
-        pose_losses = []
-        for feat_name in feat_names:
-            this_trans = motion_pred[feat_name][0] + trans_in
-            this_rot = motion_pred[feat_name][1] + rot_in
-            this_rot = mx.symbol.L2Normalization(this_rot, mode='instance')
-            pose_loss = pose_net_loss(this_rot, this_trans, label)
-            pose_losses.append(mx.symbol.MakeLoss(pose_loss))
-
-        final_pose = mx.sym.concat(motion_pred[feat_names[-1]][0],
-                motion_pred[feat_names[-1]][1], dim=1)
-        pose_losses.append(mx.sym.BlockGrad(final_pose, name='pose'))
-        loss_all = mx.symbol.Group(pose_losses)
-        Outputs[name + '_loss'] = loss_all
-    return Outputs
-
 
 
 def recurrent_pose(inputs, name,

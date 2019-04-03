@@ -1,21 +1,17 @@
 # preprocess the training images
 import os
-import cv2
 import sys
 import zpark
 import labels
 
 python_version = sys.version_info.major
-import json
 import numpy as np
-import utils.utils as uts
 from collections import OrderedDict
 
 
-HOME='/home/wangp/data/'
 def set_params(val_id=-1):
     params = OrderedDict([])
-    params['data_path'] = HOME + 'dlake/'
+    params['data_path'] = './data/dlake/'
     params['image_path'] = params['data_path'] + 'image/'
     params['depth_path'] = params['data_path'] + 'depth/'
     params['pose_path'] = params['data_path'] + 'camera_pose/'
