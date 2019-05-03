@@ -81,8 +81,66 @@ def get_pose_cnn_setting(with_points=False,
 
     return data, label
 
+
+def get_seg_cnn_setting(with_3d=False,
+                       pre_render=False,
+                       method='',
+                       ignore_labels=0,
+                       gt_type='',
+                       obj_ids=None,
+                       label_mapping=None):
+
+    """
+    Inputs:
+        with_3d: whether have rendered label as input for the network
+        pre_render: whether directly load the pre-rendered label map
+    """
+
+    data= OrderedDict([])
+    data['data'] = {'size': [512, 608],
+            'channel': 3,
+            'is_img': True,
+            'resize_method': cv2.INTER_CUBIC,
+            'transform':ts.image_transform,
+            'transform_params':{}}
+
+    if with_3d:
+        if pre_render:
+            data['label_db'] = {'size': [512, 608],
+                    'reader': data_iter.trans_reader_pre,
+                    'reader_params': {'is_gt':True} if method=='gt' \
+                            else {},
+                    'channel': 1,
+                    'is_img': False,
+                    'resize_method': cv2.INTER_NEAREST,
+                    'transform':ts.label_db_transform,
+                    'transform_params':{'with_channel':True}}
+        else:
+            data['label_db'] = {'size': [512, 608],
+                    'reader': data_iter.trans_reader,
+                    'reader_params': {'multi_return': False,
+                                      'proj_mat': True},
+                    'channel': 1,
+                    'is_img': False,
+                    'resize_method': cv2.INTER_NEAREST,
+                    'transform':ts.label_db_transform,
+                    'transform_params':{'with_channel':True,
+                        'ignore_labels':ignore_labels}}
+
+    label = OrderedDict([])
+    label['softmax_label'] = {'size': [512, 608],
+            'channel': 1,
+            'resize_method': cv2.INTER_NEAREST,
+            'transform':ts.label_transform,
+            'transform_params':{
+                'label_mapping':label_mapping}}
+
+    return data, label
+
+
 config.network = edict()
 config.network.pose_cnn_setting = get_pose_cnn_setting
+config.network.seg_cnn_setting = get_seg_cnn_setting
 
 
 

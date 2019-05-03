@@ -1,1 +1,6 @@
-test_pose_nn.py
+./data/zpark*
+./models/*
+./results/*
+*.pyc
+*.avi
+temp.py

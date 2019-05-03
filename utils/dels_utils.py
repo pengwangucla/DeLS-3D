@@ -1,14 +1,19 @@
+"""
+Utils for dels 3D with apolloscape dataset
+Author: 'peng wang'
+
+"""
+
 import numpy as np
 import os
 import cv2
 from collections import OrderedDict
 from functools import wraps
 
-
 def judge_exist(func):
     @wraps(func)
     def inner(*args, **kwargs):
-        assert os.path.exists(args[0])
+        assert os.path.exists(args[0]), args[0]
         return func(*args, **kwargs)
     return inner
 
@@ -33,6 +38,54 @@ def read_depth(depth_name):
 
     depth = (1.- np.float32(depth) / 65535.0) * (300. - 0.15) + 0.15
     return depth
+
+
+# reweighting different labels
+def label2weight(label, weights):
+    ids = np.unique(label)
+    weight = np.zeros_like(label)
+    for idx in ids:
+        weight[label == idx] = weights[idx]
+
+    return weight
+
+
+def point_reader(depth_file,
+                 K,
+                 sz=None,
+                 label_file=None,
+                 label_weight=False):
+    """
+       Reading 3D points from a depth map
+    Inputs:
+        depth_file: depth image
+        K: intrinsic
+    """
+
+    import utils_3d as uts_3d
+    depth = read_depth(depth_file)
+    if sz is not None:
+        depth = cv2.resize(depth, (sz[1], sz[0]),
+                interpolation=cv2.INTER_NEAREST)
+
+    height, width = depth.shape
+    points = uts_3d.depth2xyz(depth, K)
+
+    if label_file:
+        label = cv2.imread(label_file, cv2.IMREAD_UNCHANGED)
+        weight_map = label2weight(label, label_weight)
+        weight_mask = cv2.resize(weight_map,
+                (width, height), interpolation=cv2.INTER_NEAREST)
+        index = weight_mask > 0
+        index = index.flatten()
+        points = points[index, :]
+        weight_mask = weight_mask.flatten()[index]
+
+        return points, weight_mask
+
+    weight_mask = np.ones(sz[1] * sz[0], dtype=np.float32)
+    return points, weight_mask
+
 
 def hex_to_rgb(hex_str):
     return [int(hex_str[i:i+2], 16) for i in (0, 2 ,4)]
@@ -66,7 +119,9 @@ def gen_color_list(color_file):
         hex_color = line.split('\t')[0]
         params['color_map_list'].append(hex_to_rgb(hex_color[2:]))
 
-    params['color_num'] = len(color) + 1 # with extra background 0
+    # with extra background 0
+    params['color_num'] = len(color) + 1
+
     return params
 
 
@@ -88,36 +143,61 @@ def get_config(json_file=None):
     return config
 
 
-def label_map(label, gt_type, obj_ids=None):
-    """ Convert label map to different types of ground truth
+def image_set_2_seqs(image_set,
+                     cameras,
+                     max_len=None):
     """
-    if gt_type == 'full':
-        return label
+        Convert the set of images from apolloscape records
+        to video sequences based on image name
+    """
 
-    elif gt_type == 'binary':
-        # separate to is object or non is object, background is 1
-        assert obj_ids is not None
-        label_new = label.copy()
-        mask = np.zeros(label.shape)
-        for idx, obj_id in enumerate(obj_ids):
-            label_new[label==obj_id] = 32
-            mask[label==obj_id] = 1
-        mask = mask == 0
-        label_new[mask] = 1
-        label_new[label == 0] = 0
-        label = label_new
+    def is_conseq_frame(name, last_name):
+        record = name.split('/')[0]
+        record_id = int(record[-3:])
+        record_last = last_name.split('/')[0]
+        record_last_id = int(record_last[-3:])
+        if record_id in [record_last_id, record_last_id + 1]:
+            return True
+        return False
 
-    elif gt_type == 'bkgobj':
-        for idx, obj_id in enumerate(obj_ids):
-            label[label==obj_id] = 32
+    cam_seqs = []
+    for Camera in cameras:
+        cam_seqs.append([line for line in image_set \
+                              if Camera in line])
+    res_seqs = []
+    for seq in cam_seqs:
+        i_last = 0
+        for i in range(len(seq)):
+            if not is_conseq_frame(seq[i], seq[max(i-1, 0)]):
+                res_seqs.append(seq[i_last:i])
+                i_last = i
+        if len(seq) > i_last:
+            res_seqs.append(seq[i_last:len(seq)])
 
-    elif gt_type == 'bkg':
-        for idx, obj_id in enumerate(obj_ids):
-            label[label==obj_id] = 0
-    else:
-        raise ValueError('No given ground truth type')
 
-    return label
+    # split the array with maximum len
+    if max_len:
+        pass
+
+    return res_seqs
+
+
+def get_intr_key(keys, filename):
+    """
+       get the correct intrinsic for each image.
+    """
+    intr_key = keys[0]
+    found = False
+    for key in keys:
+        if key in filename:
+            intr_key = key
+            found = True
+            break
+
+    if not found:
+        raise ValueError('Image not assigned to a intrinsic')
+
+    return intr_key
 
 
 # renderer
@@ -141,11 +221,7 @@ def color_to_id(image, height, width,
        label_mapping: mapping label to used label id
     """
 
-    image = image.reshape((height, width, 4))
-    image = image[:, :, :3]
-    image = cv2.flip(image, 0)
     label = image[:, :, ::-1]
-
     if is_id:
         label = v_uts.color2label(label, color_map)
     else:
@@ -173,7 +249,7 @@ class Renderer(object):
                         self.image_size[1])
 
 
-    def _to_proj_mat(trans, rot, is_quater=False):
+    def _to_proj_mat(self, trans, rot, is_quater=False):
 
         ext = np.zeros((4, 4), dtype=np.float32)
         if not is_quater:
@@ -219,11 +295,10 @@ class Renderer(object):
                 pose_in[:3], pose_in[3:], is_quater=False)
         intr = self._to_proj_intr(intr)
         label, depth = self.proj.pyRenderToRGBDepth(intr, ext)
-        label_proj.append(
-                color_to_id(label, sz[0], sz[1],
-                color_map,
-                is_id=is_color,
-                label_mapping=label_map))
+        label_proj = color_to_id(label, sz[0], sz[1],
+                               color_map,
+                               is_id=is_color,
+                               label_mapping=label_map)
 
         return label_proj
 

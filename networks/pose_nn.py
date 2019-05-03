@@ -288,20 +288,13 @@ def recurrent_pose(inputs, name,
 
 
 if __name__=='__main__':
-    # data_names = ['image', 'pose_in']
-    # label_names = ['pose']
-    # input = net_util.get_mx_var_by_name(data_names)
-    # label = net_util.get_mx_var_by_name(label_names)
-    # net_out = pose_net(input['image'], pose_in=input['pose_in'],
-    #         is_train=True,label=label['pose'])
-    # mx.viz.print_summary(net_out['pose_loss'])
     data_names = ['pose_in_00', 'pose_in_01']
     label_names = ['pose_00', 'pose_01']
     inputs = net_util.get_mx_var_by_name(data_names)
     labels = net_util.get_mx_var_by_name(label_names)
     net_out = recurrent_pose(inputs, name='pose_', is_train=False,
             is_highorder=True)
-    # mx.viz.print_summary(net_out['pose_out_001'])
+    mx.viz.print_summary(net_out['pose_out_001'])
     mx.viz.plot_network(net_out['pose_out_001'])
 
 

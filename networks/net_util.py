@@ -4,7 +4,6 @@ from collections import OrderedDict
 import mxnet as mx
 import pdb
 
-
 def def_arguments(arg_list, ignore=['data','label']):
     arg_params = {}
     for args in arg_list:
@@ -82,6 +81,9 @@ def get_mx_var_by_name(names):
 
 
 def load_model(models, data_names, data_shapes, net=None, ctx=None):
+    """
+       load model with fixed length
+    """
     with_symbol = net is None
     net_pnt, arg_params, aux_params = args_from_models(models, with_symbol)
     if net is None:
@@ -105,6 +107,7 @@ def load_model(models, data_names, data_shapes, net=None, ctx=None):
 import numpy as np
 def softmax(x, axis):
     return np.exp(x) / np.sum(np.exp(x), axis=axis)
+
 
 def euler2mat_v2(rot):
     """Converts euler angles to rotation matrix
@@ -362,6 +365,17 @@ def test_grad_world2cam(mat_in, var_id, delta):
     print grad - grad_all[var_id[0], var_id[1]]
 
 
+def label_one_hot(label, num_classes):
+
+    label_smooth = mx.sym.sum(label, axis=1)
+    label_smooth = mx.sym.one_hot(label_smooth, depth=num_classes)
+    label_smooth = mx.sym.transpose(label_smooth, (0, 3, 1, 2))
+    label_smooth = mx.sym.stop_gradient(label_smooth)
+
+    return label_smooth
+
+
+
 if __name__ == '__main__':
     pose_ar = np.ones([1, 6])
     var_id = 3
@@ -372,47 +386,6 @@ if __name__ == '__main__':
     var_id = [0, 0]
     delta = 1e-4
     test_grad_world2cam(mat, var_id, delta)
-    # test euler2mat_v2
-    # pose_np = mx.nd.array(np.ones([1, 3]))
-    # pose = mx.sym.Variable('pose')
-    # mat = euler2mat(pose)
-    # mat_2 = euler2mat_v2(pose)
-    # ex = mat.bind(ctx=mx.cpu(), args={'pose':pose_np})
-    # ex_2 = mat_2.bind(ctx=mx.cpu(), args={'pose':pose_np})
-    # ex.forward()
-    # ex_2.forward()
-
-    # print ex.outputs
-    # print ex_2.outputs
-
-    # test pose2mat for loss
-    # pose = mx.sym.ones([1, 6])
-    # points = mx.sym.ones([1, 4, 3, 3])
-    # points = mx.sym.reshape(points, shape=[1, 4, 9])
-
-    # pose = mx.sym.Variable('pose')
-    # points = mx.sym.Variable('points')
-    # mat = pose2mat(pose)
-    # loc = world2cam(points, mat)
-    # loss = mx.sym.MakeLoss(data = mx.sym.sum(mat, axis=[1,2]),
-    #         grad_scale=1.0)
-    # loss = mx.sym.MakeLoss(data=mx.sym.sum(loc, axis=[1,2]),
-    #         grad_scale=1.0)
-
-    # pose_np = mx.nd.array(np.ones([1, 6]))
-    # points_np = mx.nd.array(np.ones([1, 4, 3 * 3]))
-
-    # executor = loss.simple_bind(ctx=mx.cpu(),
-    #         pose=(1,6), points=(1,4,3*3))
-    # executor.forward(is_train=True, pose=pose_np,
-    #         points=points_np)
-
-    #executor = loss.simple_bind(ctx=mx.cpu(), pose=(1,6))
-    # executor.forward(is_train=True, pose=pose_np)
-    # print executor.outputs
-
-    # executor.backward()
-    # print executor.grad_arrays
 
 
 

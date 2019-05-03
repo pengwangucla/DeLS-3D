@@ -9,6 +9,7 @@ import numpy as np
 from collections import OrderedDict
 
 
+########### not ready to use yet
 def set_params(val_id=-1):
     params = OrderedDict([])
     params['data_path'] = './data/dlake/'
@@ -46,10 +47,11 @@ def set_params(val_id=-1):
     params['out_size'] = [128, 152]
     params['batch_size'] = 1
 
-    scenes = os.listdir(params['image_path'])
     params['intrinsic'] = {
-            'Camera 5' : np.array([2304.54786556982, 2305.875668062, 1686.23787612802, 1354.98486439791]),
-            'Camera 6': np.array([2300.39065314361, 2301.31478860597, 1713.21615190657, 1342.91100799715])
+            'Camera 5' : np.array([2304.54786556982, 2305.875668062,
+                                   1686.23787612802, 1354.98486439791]),
+            'Camera 6': np.array([2300.39065314361, 2301.31478860597,
+                                  1713.21615190657, 1342.91100799715])
             }
     params['cam_names'] = params['intrinsic'].keys()
 
@@ -61,7 +63,8 @@ def set_params(val_id=-1):
     params['read_depth'] = zpark.read_depth
 
     color_params = zpark.gen_color_list(params['data_path'] + 'color.lst')
-    params['class_num'] = color_params['color_num'] # with extra background 0
+    # with extra background 0
+    params['class_num'] = color_params['color_num']
     params.update(color_params)
 
     # mapping between saved id and trainig id

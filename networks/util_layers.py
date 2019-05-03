@@ -21,7 +21,8 @@ def fcnxs_score(input,
             name=name)
 
     upscore = mx.symbol.Crop(*[bigscore, crop], offset=offset, name="upscore")
-    softmax = mx.symbol.SoftmaxOutput(data=upscore, multi_output=True, use_ignore=True, ignore_label=255, name="softmax")
+    softmax = mx.symbol.SoftmaxOutput(data=upscore,
+            multi_output=True, use_ignore=True, ignore_label=255, name="softmax")
     return softmax
 
 

@@ -5,3 +5,5 @@ export PYTHONPATH=$PYTHONPATH:$ROOT/vis_utils/
 export PYTHONPATH=$PYTHONPATH:$ROOT/dataset-api/self_localization/
 export PYTHONPATH=$PYTHONPATH:$ROOT/DeLS-3D/
 
+
+export SHARDER=$ROOT/dataset-api/self_localization/renderer/shader/
