@@ -55,10 +55,10 @@ We use the code for augmentation:
 # Dataset
 Each part of the dataset are including, `images`, `camera_pose`, `semantic_label`, `semantic_3D_points`, `split`. 
 
-| Data | `images`, `camera_pose`, `split` | `semantic_label` | `semantic_3D_points` | 'Video'|
-|:-:|:-:|:-:|:-:|:-:]
-|`Zpark`| [Download]() | [Download]() | [Download]() | [Watch](https://www.youtube.com/watch?v=M6lhkzKFEhA)|
-|`Dlake`| [Download]() | [Download]() | [Download]() | - |
+| Data | `images`, `camera_pose`, `split`, `semantic_label` | `semantic_3D_points` | 'Video'|
+|:-:|:-:|:-:|:-:|
+|`Zpark`| [Download]() |  [Download]() | [Watch](https://www.youtube.com/watch?v=M6lhkzKFEhA)|
+|`Dlake`| [Download]() |  [Download]() | - |
 
 Results videos:
 [Zpark](https://www.youtube.com/watch?v=HNPQVtgpjbE)
@@ -81,10 +81,8 @@ Notice the number of the pre-trained models could be slightly different than tha
 
 ## Download pre-trained models
 
-| Data | `PoseCNN` | `PoseRNN` | `SegmentCNN` |
-|:-:|:-:|:-:|:-:|
-|Zpark| [Download]()| [Download]()| [Download]()|
-|Dlake| [Download]()| [Download]()| [Download]()|
+Zpark: [Download](https://drive.google.com/file/d/1i3Fl6c0k__9AfLd96CZgaffbY_0g5cgf/view?usp=sharing)
+Dlake: [Download]()
 
 Download them and put under 'models/${Data}/' ${Data} is the corresponding dataset name.
 

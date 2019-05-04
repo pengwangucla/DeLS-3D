@@ -1,6 +1,7 @@
-./data/zpark*
+./data/*
 ./models/*
 ./results/*
 *.pyc
 *.avi
 temp.py
+
