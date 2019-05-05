@@ -45,7 +45,7 @@ API that supporting rendering of 3D points to label maps and depth maps:
 Various API that supporting many 3D applications
 [vis_utils](https://github.com/pengwangucla/vis_utils)
 
-Tested with Ubuntu 14.04 for rendering, python version 2.7.5, mxnet 0.11 for training.
+Tested with Ubuntu 14.04 for rendering , python version 2.7.5, mxnet 0.11 for training.
 
 If you need to train:
 We use the code for augmentation:
@@ -58,7 +58,7 @@ Each part of the dataset are including, `images`, `camera_pose`, `semantic_label
 | Data | `images`, `camera_pose`, `split`, `semantic_label` | `semantic_3D_points` | 'Video'|
 |:-:|:-:|:-:|:-:|
 |`Zpark`| [Download](https://ad-apolloscape-hk.hk-2.bcebos.com/DeLS-3D/zpark/zpark_2D.tar.gz?authorization=bce-auth-v1/9683e90232684b3a89070eabd25cf047/2019-05-04T21:43:30Z/-1/host/b00c6052b3a225f5cb03e2367679b283b2663c9bd621eae5f747f7608114387d) |  [Download](https://ad-apolloscape-hk.hk-2.bcebos.com/DeLS-3D/zpark/zpark_3D.tar.gz?authorization=bce-auth-v1/9683e90232684b3a89070eabd25cf047/2019-05-04T21:43:56Z/-1/host/4ed9ee18054f874b61e25894ac6eab0039640294c780368af6efaf50bb8b2eec) | [Watch](https://www.youtube.com/watch?v=M6lhkzKFEhA)|
-|`Dlake`| [Download]() |  [Download]() | - |
+|`Dlake`| [Download](http://ad-apolloscape-hk.hk-2.bcebos.com/DeLS-3D/dlake/dlake_2D.tar.gz?authorization=bce-auth-v1%2F9683e90232684b3a89070eabd25cf047%2F2019-05-05T00%3A54%3A03Z%2F300%2Fhost%2Fa9ef4b9154616c75526f8e8320380b2b38eb809efd16c76c519ade90f6115c08) |  [Download](http://ad-apolloscape-hk.hk-2.bcebos.com/DeLS-3D/dlake/dlake_2D.tar.gz?authorization=bce-auth-v1%2F9683e90232684b3a89070eabd25cf047%2F2019-05-05T00%3A54%3A03Z%2F300%2Fhost%2Fa9ef4b9154616c75526f8e8320380b2b38eb809efd16c76c519ade90f6115c08) | Watch |
 
 Results videos:
 [Zpark](https://www.youtube.com/watch?v=HNPQVtgpjbE)
@@ -84,9 +84,9 @@ Notice the number of the pre-trained models could be slightly different than tha
 
 Zpark: [Download](https://drive.google.com/file/d/1i3Fl6c0k__9AfLd96CZgaffbY_0g5cgf/view?usp=sharing)
 
-Dlake: [Download]()
+Dlake: Download
 
-Download them and put under 'models/${Data}/' ${Data} is the corresponding dataset name.
+Download them and put under 'models/${Data}/' ${Data} is the corresponding dataset name. 
 
 ### Testing
 Currently only zpark testing code is available
@@ -99,7 +99,17 @@ run the following code for test and evaluation of pose_cnn, pose_rnn, and seg_cn
 - The test code does not have clipping pose inside road area as preprocessing indicated due to liscense issue
 ```
 
-Download [noisy pose]() put under 'results/${Data}/noisy_pose'
+Download 
+
+
+| Data | `noisy pose`|
+|:-:|:-:|
+|`Zpark`| [Link](http://ad-apolloscape-hk.hk-2.bcebos.com/DeLS-3D/dlake/noisy_pose.tar.gz?authorization=bce-auth-v1%2F9683e90232684b3a89070eabd25cf047%2F2019-05-05T01%3A19%3A06Z%2F300%2Fhost%2Fad0f85ae5296dc5ecda77146eb6a9b1ceb0fd4363116ec0f6a8bfde3311652ee)|
+|`Dlake`| [Link](http://ad-apolloscape-hk.hk-2.bcebos.com/DeLS-3D/dlake/noisy_pose.tar.gz?authorization=bce-auth-v1%2F9683e90232684b3a89070eabd25cf047%2F2019-05-05T01%3A19%3A06Z%2F300%2Fhost%2Fad0f85ae5296dc5ecda77146eb6a9b1ceb0fd4363116ec0f6a8bfde3311652ee)|
+
+put under 'results/${Data}/noisy_pose' 
+You may also use the code to generate simulated noisy pose too. 
+
 
 Set up the environment
 ```
