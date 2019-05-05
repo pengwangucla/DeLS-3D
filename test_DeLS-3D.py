@@ -24,7 +24,6 @@ import networks.seg_nn as seg_nn
 import networks.net_util as nuts
 from config import config
 from collections import namedtuple, OrderedDict
-import pdb
 debug = 0
 
 np.set_printoptions(precision=4, suppress=True)
@@ -585,9 +584,6 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     logging.info(args)
-
-    # test_pose_cnn_demo('posecnn-test-0030', 'dlake')
-    # test_posenet_v1('posecnn-proj-0094', 'dlake')
 
     # then load the trained networks cnn rnn seg_cnn,
     DeLS = DeLS3D(args.data,
