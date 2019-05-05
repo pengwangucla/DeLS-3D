@@ -1,6 +1,6 @@
-./data/*
-./models/*
-./results/*
+*data/*
+*models/*
+*results/*
 *.pyc
 *.avi
 temp.py
