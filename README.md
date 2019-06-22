@@ -57,7 +57,7 @@ Each part of the dataset are including, `images`, `camera_pose`, `semantic_label
 
 | Data | `images`, `camera_pose`, `split`, `semantic_label` | `semantic_3D_points` | 'Video'|
 |:-:|:-:|:-:|:-:|
-|`Zpark`| [Download](https://ad-apolloscape-hk.hk-2.bcebos.com/DeLS-3D/zpark/zpark_2D.tar.gz?authorization=bce-auth-v1/9683e90232684b3a89070eabd25cf047/2019-05-04T21:43:30Z/-1/host/b00c6052b3a225f5cb03e2367679b283b2663c9bd621eae5f747f7608114387d) |  [Download](https://ad-apolloscape-hk.hk-2.bcebos.com/DeLS-3D/zpark/zpark_3D.tar.gz?authorization=bce-auth-v1/9683e90232684b3a89070eabd25cf047/2019-05-04T21:43:56Z/-1/host/4ed9ee18054f874b61e25894ac6eab0039640294c780368af6efaf50bb8b2eec) | [Watch](https://www.youtube.com/watch?v=M6lhkzKFEhA)|
+|`Zpark`| [Download](https://ad-apolloscape.bj.bcebos.com/DeLS3D/zpark_2D.tar.gz) |  [Download](https://ad-apolloscape.bj.bcebos.com/DeLS3D/zpark_3D.tar.gz) | [Watch](https://www.youtube.com/watch?v=M6lhkzKFEhA)|
 |`Dlake`| [Download](http://ad-apolloscape-hk.hk-2.bcebos.com/DeLS-3D/dlake/dlake_2D.tar.gz?authorization=bce-auth-v1%2F9683e90232684b3a89070eabd25cf047%2F2019-05-05T00%3A54%3A03Z%2F300%2Fhost%2Fa9ef4b9154616c75526f8e8320380b2b38eb809efd16c76c519ade90f6115c08) |  [Download](http://ad-apolloscape-hk.hk-2.bcebos.com/DeLS-3D/dlake/dlake_2D.tar.gz?authorization=bce-auth-v1%2F9683e90232684b3a89070eabd25cf047%2F2019-05-05T00%3A54%3A03Z%2F300%2Fhost%2Fa9ef4b9154616c75526f8e8320380b2b38eb809efd16c76c519ade90f6115c08) | Watch |
 
 Results videos:
