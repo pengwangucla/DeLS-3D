@@ -1,6 +1,6 @@
 
 # DeLS-3D
-The code for DeLS-3D of CVPR 2018 and the jounal paper, website: [Apolloscape Dataset](apolloscape.auto).
+The code for [DeLS-3D](https://arxiv.org/abs/1805.04949) of CVPR 2018 and the jounal paper, website: [Apolloscape Dataset](apolloscape.auto).
 
 ```
     @inproceedings{wang2018dels,
